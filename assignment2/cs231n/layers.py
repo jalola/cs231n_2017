@@ -391,7 +391,7 @@ def dropout_forward(x, dropout_param):
         # Store the dropout mask in the mask variable.                        #
         #######################################################################
 
-        elements = [0, 1]
+        elements = [1, 0]
         probabilites = [p, 1-p]
         mask = np.random.choice(elements, D, p=probabilites)
 
@@ -403,7 +403,7 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # TODO: Implement the test phase forward pass for inverted dropout.   #
         #######################################################################
-        out = x * (1-p)
+        out = x * p
         #######################################################################
         #                            END OF YOUR CODE                         #
         #######################################################################
@@ -435,7 +435,7 @@ def dropout_backward(dout, cache):
         #                          END OF YOUR CODE                           #
         #######################################################################
     elif mode == 'test':
-        dx = dout * (1-p)
+        dx = dout * p
     return dx
 
 
