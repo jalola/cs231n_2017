@@ -467,8 +467,32 @@ def conv_forward_naive(x, w, b, conv_param):
     # TODO: Implement the convolutional forward pass.                         #
     # Hint: you can use the function np.pad for padding.                      #
     ###########################################################################
-    pass
-    ###########################################################################
+    stride, pad = conv_param["stride"], conv_param["pad"]
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+    newH = int((H + 2 * pad - HH) / stride + 1)
+    newW = int((W + 2 * pad - WW) / stride + 1)
+
+    out = np.empty((N, F, newH, newW), dtype='float')
+    for n in range(N):
+        x_n = x[n]
+        y = np.lib.pad(x_n, ((0, 0), (pad, pad), (pad, pad)), 'constant', constant_values=((0,0),(0,0),(0,0)))
+        act_n = np.empty((newW, newH, F), dtype='float')
+        count_x = 0
+        for i in range(0, newH):
+            count_y = 0
+            for j in range(0, newW):
+                a_piece = y[:, count_x:count_x + HH, count_y:count_y + WW]
+                a_map = w * a_piece
+                a_map = np.sum(a_map, axis=(1,2,3)) + b
+                act_n[j, i] = a_map
+                count_y = count_y + stride
+            count_x = count_x + stride
+
+        out[n] = act_n.T
+
+
+    ##########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
     cache = (x, w, b, conv_param)
@@ -492,7 +516,71 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
-    pass
+    x, w, b, conv_param = cache
+    stride, pad = conv_param["stride"], conv_param["pad"]
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+
+    newH = int((H + 2 * pad - HH) / stride + 1)
+    newW = int((W + 2 * pad - WW) / stride + 1)
+
+    dw = np.zeros_like(w)
+    dx = np.zeros_like(x)
+    db = np.zeros_like(b)
+
+    for n in range(N):
+        x_n = x[n]
+        d_out_n = dout[n]
+        y = np.lib.pad(x_n, ((0, 0), (pad, pad), (pad, pad)), 'constant', constant_values=((0,0),(0,0),(0,0)))
+        act_n = np.empty((newW, newH, F), dtype='float')
+
+        origin_x = 0
+        for i in range(newH):
+            origin_y = 0
+            for j in range(newW):
+                # filter gradient
+                a_piece_dout = d_out_n[:, i:i+1, j:j+1]
+                a_piece_dout = a_piece_dout.reshape(a_piece_dout.shape[0], 1, a_piece_dout.shape[1], a_piece_dout.shape[2])
+
+                dw += a_piece_dout * y[:, origin_x:origin_x+HH, origin_y:origin_y+WW]
+
+                # dx
+                a_dx = a_piece_dout * w
+
+                a_dx = np.sum(a_dx, axis=(0))
+
+                temp_origin_x = origin_x - pad
+                temp_origin_y = origin_y - pad
+                temp_HH = origin_x + HH - pad
+                temp_WW = origin_y + WW - pad
+
+                if temp_HH < 0 or temp_WW < 0 or temp_origin_x >= H or temp_origin_y >= W:
+                    continue
+
+                if temp_origin_x < 0:
+                    temp_origin_x = 0
+                    a_dx = a_dx[:, (pad-origin_x):, :]
+
+                if temp_origin_y < 0:
+                    temp_origin_y = 0
+                    a_dx = a_dx[:, :, (pad-origin_y):]
+
+                if temp_HH > H:
+                    a_dx = a_dx[:, :(a_dx.shape[1] - (temp_HH-H)), :]
+                    temp_HH = H
+
+                if temp_WW > W:
+                    a_dx = a_dx[:, :, :(a_dx.shape[2] - (temp_WW-W))]
+                    temp_WW = W
+
+                dx[n, :, temp_origin_x:temp_HH, temp_origin_y:temp_WW] += a_dx
+
+                origin_y += stride
+            origin_x += stride
+
+        # bias gradient
+        db = db + np.sum(d_out_n, axis=(1,2))
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -518,7 +606,22 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # TODO: Implement the max pooling forward pass                            #
     ###########################################################################
-    pass
+    N, C, H, W = x.shape
+    pool_height, pool_width, stride = pool_param['pool_height'], pool_param['pool_width'], pool_param['stride']
+
+    newH = int((H - pool_height)/stride + 1)
+    newW = int((W - pool_width)/stride + 1)
+
+    out = np.zeros((N, C, newH, newW))
+    origin_i = 0
+    for i in range(newH):
+        origin_j = 0
+        for j in range(newW):
+            out[:, :, i, j] = np.amax(x[:, :, origin_i:origin_i + pool_height, origin_j:origin_j + pool_width], axis=(2,3))
+
+            origin_j += stride
+
+        origin_i += stride
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -541,7 +644,27 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the max pooling backward pass                           #
     ###########################################################################
-    pass
+    x, pool_param = cache
+    N, C, H, W = x.shape
+    pool_height, pool_width, stride = pool_param['pool_height'], pool_param['pool_width'], pool_param['stride']
+
+    newH = int((H - pool_height)/stride + 1)
+    newW = int((W - pool_width)/stride + 1)
+
+    dx = np.zeros_like(x)
+    origin_i = 0
+    for i in range(newH):
+        origin_j = 0
+        for j in range(newW):
+            a_cube = x[:, :, origin_i:origin_i + pool_height, origin_j:origin_j + pool_width]
+            a_max = np.amax(a_cube, axis=(2,3)).reshape(a_cube.shape[0], a_cube.shape[1], 1, 1)
+            a_max_cube_0_1 = (a_max == a_cube).astype(int)
+            dx[:, :, origin_i:origin_i + pool_height, origin_j:origin_j + pool_width] += a_max_cube_0_1 * dout[:, :, i, j].reshape(N, C, 1, 1)
+
+            origin_j += stride
+
+        origin_i += stride
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
